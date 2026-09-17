@@ -475,6 +475,27 @@ _pthread_mutex_check_init_slow(pthread_mutex_t *mutex)
 {
 	int res = EINVAL;
 
+#ifdef DARLING
+	/*
+	 * A BSS-zero pthread_mutex_t (C++ `static mutex;` /
+	 * `_LIBCPP_MUTEX_INITIALIZER {}`, which is also Linux's
+	 * PTHREAD_MUTEX_INITIALIZER) has sig==0, not Apple's
+	 * _PTHREAD_MUTEX_SIG_init. Realize it as a default mutex so first
+	 * lock/unlock matches PTHREAD_MUTEX_INITIALIZER.
+	 */
+	if (mutex->sig == 0) {
+		_pthread_lock_lock(&mutex->lock);
+		if (mutex->sig == 0) {
+			mutex->sig = _PTHREAD_MUTEX_SIG_init;
+		}
+		if (_pthread_mutex_check_signature_init(mutex)) {
+			res = _pthread_mutex_init(mutex, NULL, (mutex->sig & 0xf));
+		} else if (_pthread_mutex_check_signature(mutex)) {
+			res = 0;
+		}
+		_pthread_lock_unlock(&mutex->lock);
+	} else
+#endif
 	if (_pthread_mutex_check_signature_init(mutex)) {
 		_pthread_lock_lock(&mutex->lock);
 		if (_pthread_mutex_check_signature_init(mutex)) {

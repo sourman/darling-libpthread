@@ -895,6 +895,8 @@ _pthread_start(pthread_t self, mach_port_t kport,
 		PTHREAD_INTERNAL_CRASH(pflags,
 				"thread_set_tsd_base() wasn't called by the kernel");
 	}
+	/* kport is this thread's Mach port from thread_self_trap, not the parent. */
+	_pthread_tsd_slot(self, MACH_THREAD_SELF) = kport;
 	PTHREAD_DEBUG_ASSERT(MACH_PORT_VALID(kport));
 	PTHREAD_DEBUG_ASSERT(_pthread_tsd_slot(self, MACH_THREAD_SELF) == kport);
 	_pthread_validate_signature(self);
