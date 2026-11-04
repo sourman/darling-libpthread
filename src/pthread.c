@@ -1114,8 +1114,11 @@ pthread_threadid_np(pthread_t thread, uint64_t *thread_id)
 		 * A 0 id at registration and a resolved id when the vsync task
 		 * runs miss the map, so the task returns before BeginFrame.
 		 */
-		if (os_unlikely(*thread_id == 0))
-			res = _pthread_threadid_slow(self, thread_id);
+		if (os_unlikely(*thread_id == 0)) {
+			*thread_id = self->thread_id = __thread_selfid();
+			if (*thread_id == 0)
+				res = EINVAL;
+		}
 	} else if (!_pthread_validate_thread_and_list_lock(thread)) {
 		res = ESRCH;
 	} else {
