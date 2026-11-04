@@ -52,8 +52,6 @@
 
 #include "resolver.h"
 #include "internal.h"
-#include <stdio.h>
-#include <unistd.h>
 #include "kern/kern_trace.h"
 
 #ifndef BUILDING_VARIANT /* [ */
@@ -1393,31 +1391,6 @@ _pthread_mutex_firstfit_lock_updatebits(pthread_mutex_t *mutex, uint64_t selfid,
 	return gotlock;
 }
 
-/*
- * Owner tids are host gettids. A contended first-fit mutex whose owner thread
- * has exited never unlocks, and psynch_mutexwait then sleeps in recv forever
- * (NSWindow setFrame:display:animate: hit this). If /proc shows our own tid
- * but not the owner, drop the abandoned exclusive bit so this thread can take
- * the lock.
- */
-static int
-_pthread_mutex_owner_alive(uint64_t tid, uint64_t selfid)
-{
-	char path[64];
-
-	if (tid == 0 || tid == PTHREAD_MTX_TID_SWITCHING || tid == selfid)
-		return 1;
-	snprintf(path, sizeof(path), "/proc/self/task/%llu",
-			(unsigned long long)tid);
-	if (access(path, F_OK) == 0)
-		return 1;
-	snprintf(path, sizeof(path), "/proc/self/task/%llu",
-			(unsigned long long)selfid);
-	if (access(path, F_OK) != 0)
-		return 1;
-	return 0;
-}
-
 OS_NOINLINE
 static int
 _pthread_mutex_firstfit_lock_wait(pthread_mutex_t *mutex, mutex_seq newseq,
@@ -1426,25 +1399,6 @@ _pthread_mutex_firstfit_lock_wait(pthread_mutex_t *mutex, mutex_seq newseq,
 	uint64_t *tidaddr;
 	MUTEX_GETTID_ADDR(mutex, &tidaddr);
 	uint64_t selfid = _pthread_threadid_self_np_direct();
-
-	if (!_pthread_mutex_owner_alive(oldtid, selfid)) {
-		mutex_seq *seqaddr;
-		mutex_seq oldseq, cleared;
-
-		MUTEX_GETSEQ_ADDR(mutex, &seqaddr);
-		do {
-			mutex_seq_load(seqaddr, &oldseq);
-			if (os_atomic_load_wide(tidaddr, relaxed) != oldtid)
-				break;
-			cleared = oldseq;
-			cleared.lgenval &= ~PTH_RWL_EBIT;
-		} while (!mutex_seq_atomic_cmpxchgv(seqaddr, &oldseq, &cleared,
-				relaxed));
-		if (os_atomic_load_wide(tidaddr, relaxed) == oldtid)
-			os_atomic_store_wide(tidaddr, 0, relaxed);
-		if (_pthread_mutex_firstfit_lock_updatebits(mutex, selfid, &newseq))
-			return 0;
-	}
 
 	PLOCKSTAT_MUTEX_BLOCK((pthread_mutex_t *)mutex);
 	do {
