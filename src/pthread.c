@@ -1109,6 +1109,13 @@ pthread_threadid_np(pthread_t thread, uint64_t *thread_id)
 
 	if (thread == NULL || thread == self) {
 		*thread_id = self->thread_id;
+		/*
+		 * Chromium's CVDisplayLink map key is (display, CurrentId()).
+		 * A 0 id at registration and a resolved id when the vsync task
+		 * runs miss the map, so the task returns before BeginFrame.
+		 */
+		if (os_unlikely(*thread_id == 0))
+			res = _pthread_threadid_slow(self, thread_id);
 	} else if (!_pthread_validate_thread_and_list_lock(thread)) {
 		res = ESRCH;
 	} else {
